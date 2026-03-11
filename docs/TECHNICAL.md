@@ -99,7 +99,10 @@ python3 path/to/sync_skills.py --verbose
 - Detects all 10 supported AI tools by probing for their skills directories
 - Supports both user-level (global) and project-level (local) scopes
 - Compares directory content using MD5 hashes (not just modification times)
-- Reports three statuses: **in sync** (identical hashes), **out of sync** (different hashes, identifies newest by mtime), **single-tool only** (informational)
+- Reports four statuses: **in sync** (identical hashes), **out of sync** (2 distinct versions, identifies newest by mtime), **conflict** (3+ distinct versions, multi-way divergence), **single-tool only** (informational)
+- Per-file verbose diff: `--verbose` shows which specific files are added/removed/modified between locations
+- File count display for single-tool skills (e.g., `(19 files)`)
+- Exit code 2 when drift detected (enables cron/CI alerting); exit 0 when all in sync
 - Human-readable table output (default) or JSON for programmatic use
 
 **Two-layer architecture:** The script only reports status. All write operations (copy, overwrite, deploy) are performed by the AI agent after presenting proposed changes and receiving explicit user confirmation.

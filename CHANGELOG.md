@@ -5,11 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] - 2026-03-11
+
+### Added
+- **Per-file verbose diff**: `--verbose` now shows which specific files are added/removed/modified between the newest copy and each stale location, replacing the old hash-prefix display. Inspired by [sync-skills](https://github.com/viteinfinite/sync-skills) conflict resolution.
+- **Conflict detection**: When 3+ tools have 3+ distinct versions of a skill, the status is now `"conflict"` (not just `"out_of_sync"`), with a prominent warning showing how many distinct versions exist.
+- **Exit code 2 for drift**: The script now exits with code 2 when out-of-sync or conflicting skills are detected, enabling cron/CI alerting. Inspired by [skills-sync](https://github.com/ryanreh99/skills-sync) drift detection.
+- **File count in inventory**: Single-tool skills now display file count (e.g., `(19 files)`) for context about skill complexity.
+- **17 new tests** covering per-file diff, conflict detection, file counts, and output formatting. Total test count: 128 (65 scanner + 63 sync).
+
+### Changed
+- `sync_skills.py` bumped to v1.1.0.
+
+### Fixed
+- **Hardening from code review**: Replaced `lstrip("~/")` with `removeprefix("~/")`, added `OSError` handling in hash/mtime functions, added symlink guard on directory traversal, narrowed exception types in frontmatter parsing.
+- **OpenAI Codex path in sync_skills.py**: Aligned with v1.7.1 update (`~/.agents/skills/`).
+- **SKILL.md Section D**: Replaced `{slug}` with `{skill-name}` for consistency.
+- **Doc fixes**: Updated README repo tree, version header, scanner test counts (62→65), `validate_frontmatter.py` description, added `SECURITY_SCANNING.md` to CLAUDE.md tree.
+
 ## [1.8.0] - 2026-03-11
 
 ### Added
-- **`sync_skills.py` — read-only sync status reporter**: New zero-dependency Python 3 CLI tool that detects installed AI tools, inventories skills across them, compares content using MD5 directory hashes, and reports sync status (in sync / out of sync / single-tool only). Supports `--json` for machine-readable output, `--skill` for single-skill checks, `--project-dir` for project-level scanning, and `--verbose` for per-file hash details. Addresses [#4](https://github.com/jacob-bd/universal-skills-manager/issues/4).
-- **46 new tests** in `tests/test_sync_skills.py` covering tool detection, skill inventory, hash comparison, output formatting (human + JSON), edge cases (broken symlinks, missing frontmatter, single-tool installs), and project-level scanning. Total test count: 111.
+- **`sync_skills.py` — read-only sync status reporter**: New zero-dependency Python 3 CLI tool that detects installed AI tools, inventories skills across them, compares content using MD5 directory hashes, and reports sync status (in sync / out of sync / single-tool only). Supports `--json` for machine-readable output, `--skill` for single-skill checks, `--project-dir` for project-level scanning, and `--verbose` for per-file details. Addresses [#4](https://github.com/jacob-bd/universal-skills-manager/issues/4).
+- **46 new tests** in `tests/test_sync_skills.py` covering tool detection, skill inventory, hash comparison, output formatting (human + JSON), edge cases (broken symlinks, missing frontmatter, single-tool installs), and project-level scanning.
 
 ### Changed
 - **SKILL.md Section 2 ("Updates & Consistency Check")**: Expanded from a 3-line placeholder to a concrete 5-step procedure that runs `sync_skills.py`, presents the report, asks the user which direction to sync, copies on approval, and verifies.

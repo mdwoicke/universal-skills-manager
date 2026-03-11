@@ -33,7 +33,7 @@ universal-skills-manager/
 ├── tests/
 │   ├── conftest.py                 # Test fixtures (scanner, tmp_skill helpers)
 │   ├── test_scan_skill.py          # Scanner test suite (65 tests)
-│   └── test_sync_skills.py         # Sync reporter test suite (46 tests)
+│   └── test_sync_skills.py         # Sync reporter test suite (63 tests)
 └── universal-skills-manager/       # The skill folder
     ├── SKILL.md                    # Skill definition and logic
     └── scripts/
@@ -216,7 +216,7 @@ The sync reporter:
 - **Sync status reporter**: `universal-skills-manager/scripts/sync_skills.py` - Read-only tool that detects installed AI tools, inventories skills, and reports sync status
 - **Technical reference**: `docs/TECHNICAL.md` - API reference, script usage, security details, frontmatter spec
 - **Scanner test suite**: `tests/test_scan_skill.py` - 65 tests covering all scanner detection categories
-- **Sync test suite**: `tests/test_sync_skills.py` - 46 tests covering tool detection, inventory, comparison, and output
+- **Sync test suite**: `tests/test_sync_skills.py` - 63 tests covering tool detection, inventory, comparison, output, per-file diffs, conflicts, and edge cases
 - **Security policy**: `SECURITY.md` - Vulnerability reporting and security architecture
 - **User documentation**: `README.md` - Installation, configuration, and usage guide
 - **Developer context**: `CLAUDE.md` - This file, technical architecture and guidelines
@@ -238,7 +238,7 @@ When modifying the security scanner (`scan_skill.py`):
 
 When modifying the sync status reporter (`sync_skills.py`):
 1. Run the test suite: `python3 -m pytest tests/test_sync_skills.py -v`
-2. All 46 tests must pass before committing
+2. All 63 tests must pass before committing
 3. Test manually: `python3 universal-skills-manager/scripts/sync_skills.py`
 4. Verify JSON output: `python3 universal-skills-manager/scripts/sync_skills.py --json`
 
