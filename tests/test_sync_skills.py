@@ -8,8 +8,10 @@ import pytest
 
 from sync_skills import (
     build_inventory,
+    compare_file_hashes,
     compare_inventory,
     detect_tools,
+    directory_file_hashes,
     directory_hash,
     extract_frontmatter,
     file_hash,
@@ -430,15 +432,16 @@ def test_format_human_out_of_sync(tmp_path):
     assert "stale" in output
 
 
-def test_format_human_verbose_shows_hashes(tmp_path):
-    """Verbose mode shows per-tool hash prefixes."""
+def test_format_human_verbose_shows_file_diff(tmp_path):
+    """Verbose mode shows per-file diff details for out-of-sync skills."""
     make_skill(tmp_path, ".claude/skills", "drift", SKILL_MD_CONTENT)
     make_skill(tmp_path, ".gemini/skills", "drift", SKILL_MD_V2)
     detected = detect_tools(home=tmp_path)
     inv = build_inventory(detected)
     results = compare_inventory(inv)
     output = format_human(results, detected, verbose=True)
-    assert "hashes:" in output
+    assert "modified" in output
+    assert "~ SKILL.md" in output
 
 
 def test_format_human_summary_counts(tmp_path):
@@ -603,3 +606,230 @@ def test_project_level_no_dir(tmp_path):
     project.mkdir()
     detected = detect_tools(home=tmp_path, project_dir=project)
     assert all(t["scope"] == "user" for t in detected)
+
+
+# ============================================================================
+# Per-file Hashing and Diff
+# ============================================================================
+
+
+def test_directory_file_hashes(tmp_path):
+    """Returns a map of relative paths to hashes."""
+    d = tmp_path / "skill"
+    d.mkdir()
+    (d / "SKILL.md").write_text("content", encoding="utf-8")
+    (d / "helper.py").write_text("print('hi')", encoding="utf-8")
+    fh = directory_file_hashes(d)
+    assert "SKILL.md" in fh
+    assert "helper.py" in fh
+    assert len(fh) == 2
+
+
+def test_compare_file_hashes_identical():
+    """Identical file maps produce empty diffs."""
+    a = {"SKILL.md": "abc123", "helper.py": "def456"}
+    diff = compare_file_hashes(a, a)
+    assert diff == {"added": [], "removed": [], "modified": []}
+
+
+def test_compare_file_hashes_modified():
+    """Different hashes for the same file are detected as modified."""
+    a = {"SKILL.md": "abc123"}
+    b = {"SKILL.md": "xyz789"}
+    diff = compare_file_hashes(a, b)
+    assert diff["modified"] == ["SKILL.md"]
+    assert diff["added"] == []
+    assert diff["removed"] == []
+
+
+def test_compare_file_hashes_added_removed():
+    """Files present in one but not the other are detected."""
+    a = {"SKILL.md": "abc", "old.txt": "111"}
+    b = {"SKILL.md": "abc", "new.txt": "222"}
+    diff = compare_file_hashes(a, b)
+    assert diff["added"] == ["new.txt"]
+    assert diff["removed"] == ["old.txt"]
+    assert diff["modified"] == []
+
+
+# ============================================================================
+# File Count in Inventory
+# ============================================================================
+
+
+def test_inventory_includes_file_count(tmp_path):
+    """Inventory entries include file_count."""
+    skill_dir = make_skill(tmp_path, ".claude/skills", "multi-file")
+    (skill_dir / "helper.py").write_text("pass", encoding="utf-8")
+    tool_entry = {"id": "claude-code", "name": "Claude Code", "scope": "user",
+                  "path": tmp_path / ".claude/skills"}
+    inv = inventory_tool(tool_entry)
+    assert inv["multi-file"]["file_count"] == 2
+
+
+def test_inventory_single_file_count(tmp_path):
+    """A skill with only SKILL.md has file_count of 1."""
+    make_skill(tmp_path, ".claude/skills", "minimal")
+    tool_entry = {"id": "claude-code", "name": "Claude Code", "scope": "user",
+                  "path": tmp_path / ".claude/skills"}
+    inv = inventory_tool(tool_entry)
+    assert inv["minimal"]["file_count"] == 1
+
+
+# ============================================================================
+# Conflict Detection (3+ distinct versions)
+# ============================================================================
+
+
+SKILL_MD_V3 = """\
+---
+name: test-skill
+description: "A test skill v3"
+version: "3.0"
+---
+
+# Test Skill v3
+
+This is yet another version.
+"""
+
+
+def test_compare_conflict_three_versions(tmp_path):
+    """Three distinct versions across three tools are reported as conflict."""
+    make_skill(tmp_path, ".claude/skills", "diverged", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".gemini/skills", "diverged", SKILL_MD_V2)
+    make_skill(tmp_path, ".config/opencode/skills", "diverged", SKILL_MD_V3)
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    assert len(results) == 1
+    assert results[0]["status"] == "conflict"
+
+
+def test_compare_two_versions_not_conflict(tmp_path):
+    """Two distinct versions stay as out_of_sync, not conflict."""
+    make_skill(tmp_path, ".claude/skills", "diverged", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".gemini/skills", "diverged", SKILL_MD_V2)
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    assert results[0]["status"] == "out_of_sync"
+
+
+def test_compare_three_tools_two_versions_is_out_of_sync(tmp_path):
+    """Three tools with only 2 distinct versions = out_of_sync, not conflict."""
+    make_skill(tmp_path, ".claude/skills", "partial", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".gemini/skills", "partial", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".config/opencode/skills", "partial", SKILL_MD_V2)
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    assert results[0]["status"] == "out_of_sync"
+
+
+# ============================================================================
+# File Diff in Comparison Results
+# ============================================================================
+
+
+def test_compare_includes_file_diff(tmp_path):
+    """Out-of-sync results include per-file diff vs newest."""
+    make_skill(tmp_path, ".claude/skills", "drift", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".gemini/skills", "drift", SKILL_MD_V2)
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    entry = results[0]
+    assert entry["status"] == "out_of_sync"
+    assert entry["file_diff"]
+    stale_key = [k for k in entry["file_diff"]][0]
+    diff = entry["file_diff"][stale_key]
+    assert "SKILL.md" in diff["modified"]
+
+
+def test_compare_in_sync_no_file_diff(tmp_path):
+    """In-sync results have empty file_diff."""
+    make_skill(tmp_path, ".claude/skills", "ok")
+    make_skill(tmp_path, ".gemini/skills", "ok")
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    assert results[0]["file_diff"] == {}
+
+
+# ============================================================================
+# Output Formatting — Conflict and File Count
+# ============================================================================
+
+
+def test_format_human_conflict(tmp_path):
+    """Human output shows CONFLICT marker for 3+ versions."""
+    make_skill(tmp_path, ".claude/skills", "mess", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".gemini/skills", "mess", SKILL_MD_V2)
+    make_skill(tmp_path, ".config/opencode/skills", "mess", SKILL_MD_V3)
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    output = format_human(results, detected, verbose=False)
+    assert "CONFLICT" in output
+    assert "3 distinct versions" in output
+    assert "1 conflict" in output
+
+
+def test_format_human_file_count_single(tmp_path):
+    """Single-tool skills show file count."""
+    skill_dir = make_skill(tmp_path, ".claude/skills", "solo")
+    (skill_dir / "extra.py").write_text("pass", encoding="utf-8")
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    output = format_human(results, detected, verbose=False)
+    assert "(2 files)" in output
+
+
+def test_format_human_verbose_file_diff(tmp_path):
+    """Verbose mode shows per-file diff details."""
+    make_skill(tmp_path, ".claude/skills", "drift", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".gemini/skills", "drift", SKILL_MD_V2)
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    output = format_human(results, detected, verbose=True)
+    assert "1 modified" in output
+    assert "~ SKILL.md" in output
+
+
+def test_format_json_includes_conflict_count(tmp_path):
+    """JSON summary includes conflict count."""
+    make_skill(tmp_path, ".claude/skills", "mess", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".gemini/skills", "mess", SKILL_MD_V2)
+    make_skill(tmp_path, ".config/opencode/skills", "mess", SKILL_MD_V3)
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    data = json.loads(format_json(results, detected))
+    assert data["summary"]["conflict"] == 1
+    assert data["skills"][0]["status"] == "conflict"
+
+
+def test_format_json_includes_file_count(tmp_path):
+    """JSON locations include file_count."""
+    make_skill(tmp_path, ".claude/skills", "test")
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    data = json.loads(format_json(results, detected))
+    assert data["skills"][0]["locations"][0]["file_count"] == 1
+
+
+def test_format_json_includes_file_diff(tmp_path):
+    """JSON includes file_diff for out-of-sync skills."""
+    make_skill(tmp_path, ".claude/skills", "drift", SKILL_MD_CONTENT)
+    make_skill(tmp_path, ".gemini/skills", "drift", SKILL_MD_V2)
+    detected = detect_tools(home=tmp_path)
+    inv = build_inventory(detected)
+    results = compare_inventory(inv)
+    data = json.loads(format_json(results, detected))
+    skill = data["skills"][0]
+    assert "file_diff" in skill
+    assert any("SKILL.md" in diff["modified"] for diff in skill["file_diff"].values())

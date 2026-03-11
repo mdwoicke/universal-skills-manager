@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # ============================================================================
 # Tool Registry
@@ -108,6 +108,23 @@ def file_hash(file_path: Path) -> str:
     return hasher.hexdigest()
 
 
+def directory_file_hashes(directory: Path) -> dict[str, str]:
+    """
+    Return a map of {relative_path: md5_hash} for all files in directory.
+
+    Symlinks and unreadable files are silently skipped.
+    """
+    result = {}
+    for file_path in sorted(directory.rglob('*')):
+        if file_path.is_file() and not file_path.is_symlink():
+            rel = str(file_path.relative_to(directory))
+            try:
+                result[rel] = file_hash(file_path)
+            except OSError:
+                continue
+    return result
+
+
 def directory_hash(directory: Path) -> str:
     """
     Compute a composite hash for an entire directory.
@@ -116,16 +133,9 @@ def directory_hash(directory: Path) -> str:
     so that identical directory trees always produce the same result.
     Unreadable files are silently skipped.
     """
-    file_hashes = []
-    for file_path in sorted(directory.rglob('*')):
-        if file_path.is_file() and not file_path.is_symlink():
-            rel = str(file_path.relative_to(directory))
-            try:
-                fh = file_hash(file_path)
-            except OSError:
-                continue
-            file_hashes.append(f"{rel}:{fh}")
-    combined = hashlib.md5('\n'.join(file_hashes).encode()).hexdigest()
+    file_hashes = directory_file_hashes(directory)
+    entries = [f"{rel}:{fh}" for rel, fh in sorted(file_hashes.items())]
+    combined = hashlib.md5('\n'.join(entries).encode()).hexdigest()
     return combined
 
 
@@ -258,10 +268,13 @@ def inventory_tool(tool_entry: dict) -> dict[str, dict]:
             datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat()
             if mtime else None
         )
+        file_hashes = directory_file_hashes(child)
 
         skills[skill_name] = {
             "path": str(child),
             "hash": directory_hash(child),
+            "file_hashes": file_hashes,
+            "file_count": len(file_hashes),
             "mtime": mtime,
             "mtime_iso": mtime_iso,
             "version": fm.get("version"),
@@ -301,6 +314,22 @@ def build_inventory(detected_tools: list[dict]) -> dict:
 # Comparison
 # ============================================================================
 
+def compare_file_hashes(a: dict[str, str], b: dict[str, str]) -> dict:
+    """
+    Compare per-file hash maps from two skill directories.
+
+    Returns {"added": [...], "removed": [...], "modified": [...]}.
+    Perspective is a→b: "added" means in b but not a, "removed" means in a but not b.
+    """
+    a_set = set(a.keys())
+    b_set = set(b.keys())
+    return {
+        "added": sorted(b_set - a_set),
+        "removed": sorted(a_set - b_set),
+        "modified": sorted(f for f in a_set & b_set if a[f] != b[f]),
+    }
+
+
 def compare_inventory(inventory: dict) -> list[dict]:
     """
     Compare each skill across its installed locations.
@@ -308,10 +337,17 @@ def compare_inventory(inventory: dict) -> list[dict]:
     Returns a list of skill status dicts:
         {
             "skill": skill name,
-            "status": "in_sync" | "out_of_sync" | "single",
-            "locations": [ { tool_key, tool_name, scope, path, hash, mtime_iso, version, is_newest } ],
+            "status": "in_sync" | "out_of_sync" | "conflict" | "single",
+            "locations": [ { tool_key, tool_name, scope, path, hash, file_count, mtime_iso, version, is_newest } ],
             "newest_tool_key": tool_key of the newest copy (by mtime),
+            "file_diff": {tool_key: {added, removed, modified}} (vs newest, only for out_of_sync/conflict),
         }
+
+    Status meanings:
+        in_sync     — all locations have identical content
+        out_of_sync — exactly 2 distinct versions (clear newest/stale)
+        conflict    — 3+ distinct versions across locations (multi-way divergence)
+        single      — skill exists in only one tool
     """
     results = []
     for skill_name in sorted(inventory.keys()):
@@ -325,6 +361,8 @@ def compare_inventory(inventory: dict) -> list[dict]:
                 "scope": info["scope"],
                 "path": info["path"],
                 "hash": info["hash"],
+                "file_hashes": info.get("file_hashes", {}),
+                "file_count": info.get("file_count", 0),
                 "mtime": info["mtime"],
                 "mtime_iso": info["mtime_iso"],
                 "version": info["version"],
@@ -337,23 +375,36 @@ def compare_inventory(inventory: dict) -> list[dict]:
                 "status": "single",
                 "locations": locations,
                 "newest_tool_key": locations[0]["tool_key"] if locations else None,
+                "file_diff": {},
             })
             continue
 
         hashes = {loc["hash"] for loc in locations}
         if len(hashes) == 1:
             status = "in_sync"
+        elif len(hashes) >= 3:
+            status = "conflict"
         else:
             status = "out_of_sync"
 
         newest_loc = max(locations, key=lambda x: x["mtime"] or 0)
         newest_loc["is_newest"] = True
 
+        file_diff = {}
+        if status in ("out_of_sync", "conflict"):
+            newest_files = newest_loc["file_hashes"]
+            for loc in locations:
+                if loc["tool_key"] != newest_loc["tool_key"]:
+                    file_diff[loc["tool_key"]] = compare_file_hashes(
+                        newest_files, loc["file_hashes"]
+                    )
+
         results.append({
             "skill": skill_name,
             "status": status,
             "locations": locations,
             "newest_tool_key": newest_loc["tool_key"],
+            "file_diff": file_diff,
         })
     return results
 
@@ -388,6 +439,7 @@ def format_human(results: list[dict], detected_tools: list[dict], verbose: bool)
 
     count_sync = 0
     count_out = 0
+    count_conflict = 0
     count_single = 0
 
     for entry in results:
@@ -396,9 +448,9 @@ def format_human(results: list[dict], detected_tools: list[dict], verbose: bool)
         if entry["status"] == "single":
             count_single += 1
             loc = entry["locations"][0]
-            date_str = loc["mtime_iso"][:10] if loc["mtime_iso"] else "unknown"
+            files_label = f"({loc['file_count']} file{'s' if loc['file_count'] != 1 else ''})"
             lines.append(f"    {loc['tool_name']:20s} {loc['path']}")
-            lines.append(f"    {'':20s} (only installed here)")
+            lines.append(f"    {'':20s} (only installed here) {files_label}")
             continue
 
         if entry["status"] == "in_sync":
@@ -407,6 +459,19 @@ def format_human(results: list[dict], detected_tools: list[dict], verbose: bool)
                 lines.append(
                     f"    {loc['tool_name']:20s} {loc['path']:50s} "
                     f"\u2713 in sync"
+                )
+        elif entry["status"] == "conflict":
+            count_conflict += 1
+            distinct = len({loc["hash"] for loc in entry["locations"]})
+            lines.append(f"    \u26a0 CONFLICT: {distinct} distinct versions found")
+            for loc in entry["locations"]:
+                date_str = loc["mtime_iso"][:10] if loc["mtime_iso"] else "unknown"
+                if loc["is_newest"]:
+                    marker = f"\u2713 newest ({date_str})"
+                else:
+                    marker = f"\u2717 differs ({date_str})"
+                lines.append(
+                    f"    {loc['tool_name']:20s} {loc['path']:50s} {marker}"
                 )
         else:
             count_out += 1
@@ -420,10 +485,25 @@ def format_human(results: list[dict], detected_tools: list[dict], verbose: bool)
                     f"    {loc['tool_name']:20s} {loc['path']:50s} {marker}"
                 )
 
-        if verbose and entry["status"] == "out_of_sync":
-            lines.append(f"    {'':20s} hashes: " + ", ".join(
-                f"{l['tool_id']}={l['hash'][:8]}" for l in entry["locations"]
-            ))
+        if verbose and entry["status"] in ("out_of_sync", "conflict"):
+            file_diff = entry.get("file_diff", {})
+            for tool_key, diff in file_diff.items():
+                tool_label = tool_key.split(":")[0]
+                diff_parts = []
+                if diff["modified"]:
+                    diff_parts.append(f"{len(diff['modified'])} modified")
+                if diff["added"]:
+                    diff_parts.append(f"{len(diff['added'])} only in newest")
+                if diff["removed"]:
+                    diff_parts.append(f"{len(diff['removed'])} only here")
+                if diff_parts:
+                    lines.append(f"    {'':20s} {tool_label}: {', '.join(diff_parts)}")
+                    for f in diff["modified"][:5]:
+                        lines.append(f"    {'':22s} ~ {f}")
+                    for f in diff["added"][:3]:
+                        lines.append(f"    {'':22s} + {f} (missing here)")
+                    for f in diff["removed"][:3]:
+                        lines.append(f"    {'':22s} - {f} (not in newest)")
 
     lines.append("")
     lines.append("-" * 60)
@@ -432,6 +512,8 @@ def format_human(results: list[dict], detected_tools: list[dict], verbose: bool)
         parts.append(f"{count_sync} in sync")
     if count_out:
         parts.append(f"{count_out} out of sync")
+    if count_conflict:
+        parts.append(f"{count_conflict} conflict")
     if count_single:
         parts.append(f"{count_single} single-tool only")
     lines.append(f"Summary: {', '.join(parts) if parts else 'no skills found'}")
@@ -462,16 +544,20 @@ def format_json(results: list[dict], detected_tools: list[dict]) -> str:
                 "scope": loc["scope"],
                 "path": loc["path"],
                 "hash": loc["hash"],
+                "file_count": loc.get("file_count", 0),
                 "mtime_iso": loc["mtime_iso"],
                 "version": loc["version"],
                 "is_newest": loc["is_newest"],
             })
-        clean_results.append({
+        skill_entry = {
             "skill": entry["skill"],
             "status": entry["status"],
             "newest_tool_key": entry["newest_tool_key"],
             "locations": clean_locs,
-        })
+        }
+        if entry.get("file_diff"):
+            skill_entry["file_diff"] = entry["file_diff"]
+        clean_results.append(skill_entry)
 
     output = {
         "version": VERSION,
@@ -481,6 +567,7 @@ def format_json(results: list[dict], detected_tools: list[dict]) -> str:
             "total": len(clean_results),
             "in_sync": sum(1 for r in clean_results if r["status"] == "in_sync"),
             "out_of_sync": sum(1 for r in clean_results if r["status"] == "out_of_sync"),
+            "conflict": sum(1 for r in clean_results if r["status"] == "conflict"),
             "single": sum(1 for r in clean_results if r["status"] == "single"),
         },
     }
@@ -552,6 +639,10 @@ def main() -> None:
         print(format_json(results, detected))
     else:
         print(format_human(results, detected, args.verbose))
+
+    has_drift = any(r["status"] in ("out_of_sync", "conflict") for r in results)
+    if has_drift:
+        sys.exit(2)
 
 
 if __name__ == '__main__':
