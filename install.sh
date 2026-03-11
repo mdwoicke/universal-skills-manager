@@ -352,15 +352,23 @@ install_to_tools() {
         # Create skills directory if needed
         mkdir -p "$skills_dir" 2>/dev/null || true
 
+        # Check if user already has a config.json (contains API key) before we move anything
+        has_existing_config=false
+        if [ -f "${dest_dir}/config.json" ]; then
+            has_existing_config=true
+        fi
+
         # Atomic install: backup existing, copy new, restore on failure
         if [ -d "$dest_dir" ]; then
-            # Remove stale backup
             rm -rf "${dest_dir}.bak" 2>/dev/null || true
-            # Backup existing
             mv "$dest_dir" "${dest_dir}.bak"
         fi
 
         if cp -r "$SKILL_SOURCE" "$dest_dir" 2>/dev/null; then
+            # Restore user's config.json so their API key isn't overwritten by the empty template
+            if [ "$has_existing_config" = true ] && [ -f "${dest_dir}.bak/config.json" ]; then
+                cp "${dest_dir}.bak/config.json" "${dest_dir}/config.json"
+            fi
             success "Installed to $tool_name: $dest_dir"
             INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
             # Remove backup on success
