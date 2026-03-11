@@ -56,7 +56,7 @@ This video covers:
 - 🔍 **Multi-Source Search**: Find skills from SkillsMP (curated, AI semantic search), SkillHub (community catalog), and ClawHub (versioned skills, semantic search) — no API key needed for SkillHub or ClawHub
 - 📦 **One-Click Install**: Download and validate skills with atomic installation (temp → validate → install)
 - 🛡️ **Security Scanning**: 20+ detection categories across 3 severity levels at install time ([details](docs/TECHNICAL.md#security-scanning))
-- 🔄 **Cross-Tool Sync**: Automatically sync skills across all your installed AI tools
+- 🔄 **Cross-Tool Sync**: Detect out-of-sync skills across tools, see which copy is newest, and sync with explicit approval — powered by `sync_skills.py` (read-only status reporter) plus agent-driven copy operations
 - 📊 **Skill Matrix Report**: See which skills are installed on which tools at a glance
 - ⚡ **One-Liner Installer**: `curl | sh` auto-detects your tools and installs everywhere, with `--tools` flag for targeting specific tools
 - ✅ **Multi-File Validation**: Validates `.py`, `.sh`, `.json`, `.yaml` files during install
@@ -108,6 +108,7 @@ Once installed, just ask your AI assistant:
 "Show me my skill report"
 "Sync the skill-creator to all my tools"
 "What skills do I have in Codex vs Claude?"
+"Check which of my skills are out of sync"
 ```
 
 ## How It Works
@@ -116,7 +117,7 @@ Once installed, just ask your AI assistant:
 2. **Selection**: You choose which skill to install from the results
 3. **Fetching**: The AI fetches the skill content from GitHub or directly from ClawHub
 4. **Installation**: Creates the proper directory structure and runs security scanning
-5. **Synchronization**: Optionally copies to other detected AI tools
+5. **Synchronization**: Runs `sync_skills.py` to detect tools and compare skill versions, then copies to other locations with your approval
 
 ## Supported Tools
 

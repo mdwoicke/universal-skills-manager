@@ -31,12 +31,14 @@ universal-skills-manager/
 │   └── remediation-final-code-review.md # Code review of security hardening
 ├── tests/
 │   ├── conftest.py                 # Test fixtures (scanner, tmp_skill helpers)
-│   └── test_scan_skill.py          # Scanner test suite (62 tests)
+│   ├── test_scan_skill.py          # Scanner test suite (62 tests)
+│   └── test_sync_skills.py         # Sync reporter test suite (46 tests)
 └── universal-skills-manager/       # The skill folder
     ├── SKILL.md                    # Skill definition and logic
     └── scripts/
         ├── install_skill.py        # Python helper for downloading skills from GitHub
         ├── scan_skill.py           # Security scanner (20+ detection categories)
+        ├── sync_skills.py          # Read-only sync status reporter across AI tools
         └── validate_frontmatter.py # Cloud platform YAML frontmatter validator
 ```
 
@@ -190,10 +192,17 @@ Skills are discovered from multiple sources:
 
 ### Synchronization Logic
 
-The skill maintains consistency by:
-- Comparing modification times or content across all installed locations
-- Reporting version mismatches
-- Offering to overwrite older versions with newer ones
+Synchronization uses a two-layer architecture:
+
+**Layer 1: `sync_skills.py` (read-only diagnostic).** Detects installed AI tools, inventories skills across them, compares content using MD5 directory hashes, and outputs a status report (human-readable or JSON). It never modifies any files.
+
+**Layer 2: SKILL.md agent instructions (action-capable with user approval).** The AI agent reads the sync report and can perform write operations (copy, overwrite, deploy) only after presenting proposed changes and receiving explicit user confirmation.
+
+The sync reporter:
+- Probes all 10 supported tool directories (user-level and optionally project-level)
+- Compares directory hashes (not just modification times) for accurate drift detection
+- Reports three statuses: in sync, out of sync (identifies newest by mtime), single-tool only
+- Outputs human-readable table or JSON (`--json`) for programmatic consumption
 
 ## Working with This Repository
 
@@ -203,8 +212,10 @@ The skill maintains consistency by:
 - **Install helper**: `universal-skills-manager/scripts/install_skill.py` - Python script for downloading skills from GitHub
 - **Security scanner**: `universal-skills-manager/scripts/scan_skill.py` - Security scanner with 20+ detection categories
 - **Frontmatter validator**: `universal-skills-manager/scripts/validate_frontmatter.py` - Cloud platform YAML frontmatter validator and fixer (claude.ai/Claude Desktop/ChatGPT)
+- **Sync status reporter**: `universal-skills-manager/scripts/sync_skills.py` - Read-only tool that detects installed AI tools, inventories skills, and reports sync status
 - **Technical reference**: `docs/TECHNICAL.md` - API reference, script usage, security details, frontmatter spec
-- **Test suite**: `tests/test_scan_skill.py` - 62 tests covering all scanner detection categories
+- **Scanner test suite**: `tests/test_scan_skill.py` - 62 tests covering all scanner detection categories
+- **Sync test suite**: `tests/test_sync_skills.py` - 46 tests covering tool detection, inventory, comparison, and output
 - **Security policy**: `SECURITY.md` - Vulnerability reporting and security architecture
 - **User documentation**: `README.md` - Installation, configuration, and usage guide
 - **Developer context**: `CLAUDE.md` - This file, technical architecture and guidelines
@@ -219,10 +230,16 @@ When modifying the skill:
 5. Test discovery, installation, and sync workflows
 
 When modifying the security scanner (`scan_skill.py`):
-1. Run the test suite: `python3 -m pytest tests/ -v`
+1. Run the test suite: `python3 -m pytest tests/test_scan_skill.py -v`
 2. All 62 tests must pass before committing
 3. Test manually against a known-good skill directory
 4. Test manually against a crafted malicious skill to verify detection
+
+When modifying the sync status reporter (`sync_skills.py`):
+1. Run the test suite: `python3 -m pytest tests/test_sync_skills.py -v`
+2. All 46 tests must pass before committing
+3. Test manually: `python3 universal-skills-manager/scripts/sync_skills.py`
+4. Verify JSON output: `python3 universal-skills-manager/scripts/sync_skills.py --json`
 
 ## Development Guidelines
 
@@ -269,3 +286,4 @@ For example, installing "code-debugging" creates:
 - **GitHub content fetching**: Skills from SkillsMP/SkillHub are fetched from GitHub using raw URLs converted from tree URLs. ClawHub skills are fetched directly via ClawHub's `/file` endpoint.
 - **ClawHub install bypass**: ClawHub installs bypass `install_skill.py` (which expects GitHub URLs). Instead, content is fetched via ClawHub's API, saved to a temp directory, scanned with `scan_skill.py` manually, and then copied to the destination.
 - **Cloud platform packaging**: claude.ai, Claude Desktop, and ChatGPT all require ZIP file uploads. All three follow the same [Agent Skills specification](https://agentskills.io/specification) for SKILL.md frontmatter. The `validate_frontmatter.py` script validates compatibility for all three platforms. ChatGPT Skills are in beta (Business/Enterprise/Edu/Teachers/Healthcare plans).
+- **Sync safety**: The `sync_skills.py` script is strictly read-only (it never modifies files). All sync write operations (copy, overwrite, deploy) are performed by the agent and require explicit user approval. No sync action is ever taken autonomously.

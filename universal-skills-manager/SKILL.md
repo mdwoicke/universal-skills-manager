@@ -159,12 +159,40 @@ This skill (Universal Skills Manager) requires network access to call the Skills
     *   Display GitHub URL and stars count for reference
 
 ### 2. The "Updates & Consistency" Check
-**Trigger:** User modifies a skill or asks to "sync" skills.
+**Trigger:** User modifies a skill, asks to "sync" skills, or asks about skill consistency across tools.
 
 **Procedure:**
-1.  **Compare:** Check the modification times or content of the skill across all installed locations.
-2.  **Report:** "The 'code-review' skill in Gemini is newer than the one in OpenCode."
-3.  **Action:** Offer to overwrite older versions with the newer version to ensure consistency.
+1.  **Run the sync status reporter** (read-only — it never modifies files):
+    ```bash
+    python3 scripts/sync_skills.py
+    ```
+    For a specific skill only:
+    ```bash
+    python3 scripts/sync_skills.py --skill {skill-name}
+    ```
+    To include project-level skills:
+    ```bash
+    python3 scripts/sync_skills.py --project-dir /path/to/project
+    ```
+    For machine-readable output (useful for programmatic decisions):
+    ```bash
+    python3 scripts/sync_skills.py --json
+    ```
+2.  **Present the report to the user.** The script outputs a table showing each skill, which tools have it, sync status (in sync / out of sync / single-tool only), and which copy is newest by modification time.
+3.  **If out-of-sync skills are found**, ask the user:
+    *   Which direction to sync: newest version to all stale locations, or pick a specific source tool.
+    *   Which target tools to update (all stale, or a subset).
+4.  **On explicit user approval**, copy the chosen source version to each approved target:
+    ```bash
+    # For each approved target location:
+    rm -rf {target_skills_dir}/{skill-name}
+    cp -r {source_skills_dir}/{skill-name} {target_skills_dir}/{skill-name}
+    ```
+    **Never perform this step without user confirmation.**
+5.  **Verify** by re-running the sync status reporter to confirm all locations are now in sync:
+    ```bash
+    python3 scripts/sync_skills.py --skill {skill-name}
+    ```
 
 ### 3. Skill Discovery (Multi-Source)
 **Trigger:** User searches for skills (e.g., "Find a debugging skill" or "Search for React skills").
@@ -463,13 +491,14 @@ This skill (Universal Skills Manager) requires network access to call the Skills
 
 1.  **Structure Integrity:** When installing, always ensure the skill has its own folder (e.g., `.../skills/my-skill/`). Do not dump loose files into the root skills directory. Always run `mkdir -p` on the target path before copying files.
 2.  **Conflict Safety:** If a skill already exists at a target location, **always** ask before overwriting, unless the user explicitly requested a "Force Sync."
-3.  **User-Agent Required:** Always include `-H "User-Agent: Universal-Skills-Manager"` in all curl requests. APIs behind Cloudflare (like SkillsMP) return 403 Forbidden for bare curl requests without a User-Agent header.
-4.  **OpenClaw Note:** OpenClaw may require a restart to pick up new skills if `skills.load.watch` is not enabled in `openclaw.json`. Warn the user of this after installation.
-5.  **Cross-Platform Adaptation:**
+3.  **Sync Safety:** The `sync_skills.py` script is read-only — it only reports status and never modifies files. All write operations (copy, overwrite, deploy, delete) are performed by the agent and require explicit user approval before execution. No sync action is ever taken autonomously.
+4.  **User-Agent Required:** Always include `-H "User-Agent: Universal-Skills-Manager"` in all curl requests. APIs behind Cloudflare (like SkillsMP) return 403 Forbidden for bare curl requests without a User-Agent header.
+5.  **OpenClaw Note:** OpenClaw may require a restart to pick up new skills if `skills.load.watch` is not enabled in `openclaw.json`. Warn the user of this after installation.
+6.  **Cross-Platform Adaptation:**
     *   Gemini uses `SKILL.md`.
     *   Cline uses the same `SKILL.md` format with `name` and `description` frontmatter. The `name` field must match the directory name. No manifest generation required. Note: Cline also reads `.claude/skills/` at the project level, so Claude Code project skills work in Cline automatically.
     *   If OpenCode or Anti-Gravity require a specific manifest (e.g., `manifest.json`), generate a basic one based on the `SKILL.md` frontmatter during installation.
-6.  **Cloud Platform Frontmatter Compatibility Check (claude.ai / Claude Desktop / ChatGPT):**
+7.  **Cloud Platform Frontmatter Compatibility Check (claude.ai / Claude Desktop / ChatGPT):**
     When a user wants to upload or package a skill for **claude.ai**, **Claude Desktop**, or **ChatGPT**, validate the SKILL.md frontmatter against the [Agent Skills specification](https://agentskills.io/specification). All three platforms use strict frontmatter validation that rejects ambiguous YAML constructs like block scalars. Non-compliant skills will be rejected with "malformed YAML frontmatter" or "unexpected key" errors.
 
     **Allowed top-level frontmatter fields (Agent Skills spec):**
@@ -639,9 +668,18 @@ ClawHub hosts skill files directly (not on GitHub), so the install flow bypasses
         ```
 
 #### D. Installing from Local Source (Sync/Copy)
-1.  **Retrieve:** Read all files from the source directory.
-2.  **Create Directory:** Create the target directory `.../skills/{slug}/`.
-3.  **Save Files:** Copy all files to the new location, preserving filenames.
+This flow applies when syncing a skill from one local tool directory to another (e.g., after the sync status reporter identifies out-of-sync locations).
+
+1.  **Identify source and targets:** Use the sync status report (`python3 scripts/sync_skills.py`) to determine which tool has the newest version and which are stale or missing the skill.
+2.  **Confirm with the user:** Present the proposed copy operations and get explicit approval. Example: "Copy 'code-review' from Claude Code (~/.claude/skills/code-review) to Gemini CLI (~/.gemini/skills/code-review) and OpenCode (~/.config/opencode/skills/code-review)?"
+3.  **Create directory:** `mkdir -p {target_skills_dir}/{slug}`
+4.  **Copy all files** from the source to the target, preserving filenames:
+    ```bash
+    rm -rf {target_skills_dir}/{slug}
+    cp -r {source_skills_dir}/{slug} {target_skills_dir}/{slug}
+    ```
+5.  **Verify:** Re-run `python3 scripts/sync_skills.py --skill {slug}` to confirm all locations are now in sync.
+6.  **Handle missing skills:** If a skill exists in some tools but not others, ask the user whether to deploy it to additional tools or leave it as-is.
 
 ### SkillsMP API Configuration
 

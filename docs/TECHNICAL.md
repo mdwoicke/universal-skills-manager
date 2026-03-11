@@ -6,6 +6,7 @@ Detailed technical documentation for the Universal Skills Manager. For a quick o
 
 - [Security Scanning](#security-scanning)
 - [Install Script Usage](#install-script-usage)
+- [Sync Status Reporter](#sync-status-reporter)
 - [API Key Setup (All Options)](#api-key-setup)
 - [API Reference](#api-reference)
 - [Cloud Platforms (claude.ai / Claude Desktop / ChatGPT)](#cloud-platforms-claudeai--claude-desktop--chatgpt)
@@ -69,6 +70,39 @@ python3 path/to/install_skill.py \
 - Validates `.py`, `.sh`, `.json`, `.yaml` files
 - Supports subdirectories and nested files
 - Skip security scan with `--skip-scan` (not recommended)
+
+---
+
+## Sync Status Reporter
+
+The skill includes a read-only diagnostic tool (`sync_skills.py`) that detects installed AI tools, inventories skills across them, compares content via hashes, and outputs a sync status report. It never creates, modifies, or deletes any files.
+
+```bash
+# Check sync status across all detected tools
+python3 path/to/sync_skills.py
+
+# Check a specific skill only
+python3 path/to/sync_skills.py --skill code-review
+
+# Include project-level skill directories
+python3 path/to/sync_skills.py --project-dir /path/to/project
+
+# Machine-readable JSON output
+python3 path/to/sync_skills.py --json
+
+# Show per-file hash details for out-of-sync skills
+python3 path/to/sync_skills.py --verbose
+```
+
+**Script features:**
+- Zero dependencies (Python 3 stdlib only)
+- Detects all 10 supported AI tools by probing for their skills directories
+- Supports both user-level (global) and project-level (local) scopes
+- Compares directory content using MD5 hashes (not just modification times)
+- Reports three statuses: **in sync** (identical hashes), **out of sync** (different hashes, identifies newest by mtime), **single-tool only** (informational)
+- Human-readable table output (default) or JSON for programmatic use
+
+**Two-layer architecture:** The script only reports status. All write operations (copy, overwrite, deploy) are performed by the AI agent after presenting proposed changes and receiving explicit user confirmation.
 
 ---
 

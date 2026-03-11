@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-03-11
+
+### Added
+- **`sync_skills.py` — read-only sync status reporter**: New zero-dependency Python 3 CLI tool that detects installed AI tools, inventories skills across them, compares content using MD5 directory hashes, and reports sync status (in sync / out of sync / single-tool only). Supports `--json` for machine-readable output, `--skill` for single-skill checks, `--project-dir` for project-level scanning, and `--verbose` for per-file hash details. Addresses [#4](https://github.com/jacob-bd/universal-skills-manager/issues/4).
+- **46 new tests** in `tests/test_sync_skills.py` covering tool detection, skill inventory, hash comparison, output formatting (human + JSON), edge cases (broken symlinks, missing frontmatter, single-tool installs), and project-level scanning. Total test count: 111.
+
+### Changed
+- **SKILL.md Section 2 ("Updates & Consistency Check")**: Expanded from a 3-line placeholder to a concrete 5-step procedure that runs `sync_skills.py`, presents the report, asks the user which direction to sync, copies on approval, and verifies.
+- **SKILL.md Section D ("Installing from Local Source")**: Expanded from 3 lines to a full confirmation-gated flow with source identification, user approval, copy, verification, and missing-skill handling.
+- **New Operational Rule 3 ("Sync Safety")**: The `sync_skills.py` script is read-only — it only reports status. All write operations (copy, overwrite, deploy, delete) are performed by the agent and require explicit user approval. No sync action is ever taken autonomously.
+- **docs/TECHNICAL.md**: New "Sync Status Reporter" section with usage, CLI flags, output format, and two-layer architecture explanation.
+- **README.md**: Expanded "Cross-Tool Sync" feature description, added sync example to Quick Start, updated "How It Works" step 5.
+- **CLAUDE.md**: Expanded "Synchronization Logic" section, added `sync_skills.py` and `test_sync_skills.py` to repo structure and file locations, added sync testing instructions.
+
 ## [1.7.1] - 2026-03-08
 
 ### Fixed
