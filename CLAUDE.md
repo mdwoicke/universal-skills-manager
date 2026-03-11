@@ -27,11 +27,12 @@ universal-skills-manager/
 ├── specs.md                        # Technical specification for install script
 ├── docs/
 │   ├── TECHNICAL.md                # Technical reference (APIs, scripts, security details)
+│   ├── SECURITY_SCANNING.md        # Security scanner reference
 │   ├── scan_skill-security-analysis.md  # Full security analysis of scanner
 │   └── remediation-final-code-review.md # Code review of security hardening
 ├── tests/
 │   ├── conftest.py                 # Test fixtures (scanner, tmp_skill helpers)
-│   ├── test_scan_skill.py          # Scanner test suite (62 tests)
+│   ├── test_scan_skill.py          # Scanner test suite (65 tests)
 │   └── test_sync_skills.py         # Sync reporter test suite (46 tests)
 └── universal-skills-manager/       # The skill folder
     ├── SKILL.md                    # Skill definition and logic
@@ -214,7 +215,7 @@ The sync reporter:
 - **Frontmatter validator**: `universal-skills-manager/scripts/validate_frontmatter.py` - Cloud platform YAML frontmatter validator and fixer (claude.ai/Claude Desktop/ChatGPT)
 - **Sync status reporter**: `universal-skills-manager/scripts/sync_skills.py` - Read-only tool that detects installed AI tools, inventories skills, and reports sync status
 - **Technical reference**: `docs/TECHNICAL.md` - API reference, script usage, security details, frontmatter spec
-- **Scanner test suite**: `tests/test_scan_skill.py` - 62 tests covering all scanner detection categories
+- **Scanner test suite**: `tests/test_scan_skill.py` - 65 tests covering all scanner detection categories
 - **Sync test suite**: `tests/test_sync_skills.py` - 46 tests covering tool detection, inventory, comparison, and output
 - **Security policy**: `SECURITY.md` - Vulnerability reporting and security architecture
 - **User documentation**: `README.md` - Installation, configuration, and usage guide
@@ -231,7 +232,7 @@ When modifying the skill:
 
 When modifying the security scanner (`scan_skill.py`):
 1. Run the test suite: `python3 -m pytest tests/test_scan_skill.py -v`
-2. All 62 tests must pass before committing
+2. All 65 tests must pass before committing
 3. Test manually against a known-good skill directory
 4. Test manually against a crafted malicious skill to verify detection
 

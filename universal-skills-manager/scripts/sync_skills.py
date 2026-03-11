@@ -65,8 +65,8 @@ TOOLS = [
     {
         "id": "openai-codex",
         "name": "OpenAI Codex",
-        "user_path": "~/.codex/skills",
-        "project_path": ".codex/skills",
+        "user_path": "~/.agents/skills",
+        "project_path": ".agents/skills",
     },
     {
         "id": "goose",
@@ -114,12 +114,16 @@ def directory_hash(directory: Path) -> str:
 
     Hashes each file's relative path + content, then hashes the sorted list
     so that identical directory trees always produce the same result.
+    Unreadable files are silently skipped.
     """
     file_hashes = []
     for file_path in sorted(directory.rglob('*')):
         if file_path.is_file() and not file_path.is_symlink():
             rel = str(file_path.relative_to(directory))
-            fh = file_hash(file_path)
+            try:
+                fh = file_hash(file_path)
+            except OSError:
+                continue
             file_hashes.append(f"{rel}:{fh}")
     combined = hashlib.md5('\n'.join(file_hashes).encode()).hexdigest()
     return combined
@@ -149,7 +153,7 @@ def extract_frontmatter(skill_md: Path) -> dict:
     """Extract YAML frontmatter fields from a SKILL.md file."""
     try:
         content = skill_md.read_text(encoding='utf-8')
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         return {}
     if not content.startswith('---'):
         return {}
@@ -158,7 +162,7 @@ def extract_frontmatter(skill_md: Path) -> dict:
         return {}
     try:
         return parse_simple_yaml(parts[1])
-    except Exception:
+    except (ValueError, AttributeError):
         return {}
 
 
@@ -174,7 +178,7 @@ def resolve_tool_path(raw_path: str, home: Optional[Path] = None) -> Path:
     real filesystem.
     """
     if home is not None:
-        return home / raw_path.lstrip("~/")
+        return home / raw_path.removeprefix("~/")
     return Path(raw_path).expanduser()
 
 
@@ -219,7 +223,10 @@ def latest_mtime(directory: Path) -> Optional[float]:
     newest = None
     for file_path in directory.rglob('*'):
         if file_path.is_file() and not file_path.is_symlink():
-            mt = file_path.stat().st_mtime
+            try:
+                mt = file_path.stat().st_mtime
+            except OSError:
+                continue
             if newest is None or mt > newest:
                 newest = mt
     return newest
@@ -238,7 +245,7 @@ def inventory_tool(tool_entry: dict) -> dict[str, dict]:
         return skills
 
     for child in sorted(skills_dir.iterdir()):
-        if not child.is_dir():
+        if not child.is_dir() or child.is_symlink():
             continue
         skill_md = child / "SKILL.md"
         if not skill_md.exists():

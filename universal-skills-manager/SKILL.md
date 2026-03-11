@@ -672,13 +672,13 @@ This flow applies when syncing a skill from one local tool directory to another 
 
 1.  **Identify source and targets:** Use the sync status report (`python3 scripts/sync_skills.py`) to determine which tool has the newest version and which are stale or missing the skill.
 2.  **Confirm with the user:** Present the proposed copy operations and get explicit approval. Example: "Copy 'code-review' from Claude Code (~/.claude/skills/code-review) to Gemini CLI (~/.gemini/skills/code-review) and OpenCode (~/.config/opencode/skills/code-review)?"
-3.  **Create directory:** `mkdir -p {target_skills_dir}/{slug}`
+3.  **Create directory:** `mkdir -p {target_skills_dir}/{skill-name}`
 4.  **Copy all files** from the source to the target, preserving filenames:
     ```bash
-    rm -rf {target_skills_dir}/{slug}
-    cp -r {source_skills_dir}/{slug} {target_skills_dir}/{slug}
+    rm -rf {target_skills_dir}/{skill-name}
+    cp -r {source_skills_dir}/{skill-name} {target_skills_dir}/{skill-name}
     ```
-5.  **Verify:** Re-run `python3 scripts/sync_skills.py --skill {slug}` to confirm all locations are now in sync.
+5.  **Verify:** Re-run `python3 scripts/sync_skills.py --skill {skill-name}` to confirm all locations are now in sync.
 6.  **Handle missing skills:** If a skill exists in some tools but not others, ask the user whether to deploy it to additional tools or leave it as-is.
 
 ### SkillsMP API Configuration
